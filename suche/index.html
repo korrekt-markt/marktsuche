@@ -35,7 +35,10 @@
       padding: 3rem;
     }
 
-    h1 { color: #ff0a7a; margin-top: 0; }
+    h1 {
+      color: #ff0a7a;
+      margin-top: 0;
+    }
 
     /* FILTER */
     .filters {
@@ -75,11 +78,18 @@
       background: #2a2a2a;
       border-radius: 16px;
       padding: 1.8rem;
+      cursor: pointer;
     }
 
-    .market h3 { margin-top: 0; color: #00a7a0; }
+    .market h3 {
+      margin-top: 0;
+      color: #00a7a0;
+    }
 
-    .address { color: #ddd; margin-top: 0.4rem; }
+    .address {
+      color: #ddd;
+      margin-top: 0.4rem;
+    }
 
     .status {
       margin-top: 0.8rem;
@@ -89,6 +99,62 @@
     .open { color: #00ff99; }
     .closed { color: #ff4d4d; }
     .planned { color: #ffaa00; }
+
+    /* MODAL */
+    #marketModal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      z-index: 9999;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+    }
+
+    .modal {
+      position: relative;
+      max-width: 520px;
+      margin: 8vh auto;
+      background: #1f1f1f;
+      border-radius: 18px;
+      padding: 2rem;
+      z-index: 2;
+    }
+
+    .modal h2 {
+      margin-top: 0;
+      color: #ff0a7a;
+    }
+
+    .modal h3 {
+      color: #00a7a0;
+      margin-bottom: 0.5rem;
+    }
+
+    .modal ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .modal ul li {
+      margin: 0.3rem 0;
+      color: #ddd;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
   </style>
 </head>
 
@@ -106,7 +172,6 @@
   <h1>Marktsuche</h1>
   <p>Finde KORREKT.-Märkte nach Region.</p>
 
-  <!-- FILTER -->
   <form class="filters" id="searchForm">
     <input
       type="text"
@@ -114,21 +179,38 @@
       placeholder="Markt, Stadt oder Adresse suchen …"
     >
 
-    <select id="regionFilter">
-      <option value="">Alle Regionen</option>
-      <option value="dessau-anhalt">Dessau-Anhalt</option>
-      <option value="sachsen-anhalt">Sachsen-Anhalt</option>
-    </select>
+<select id="regionFilter">
+  <option value="">Alle Regionen</option>
+  <option value="bayern">Bayern</option>
+  <option value="berlin-brandenburg">Berlin-Brandenburg</option>
+  <option value="dessau-anhalt">Dessau-Anhalt</option>
+  <option value="nord">Nord</option>
+  <option value="sachsen-thueringen">Sachsen-Thüringen</option>
+  <option value="suedwest">Südwest</option>
+</select>
+
   </form>
 
   <div class="market-grid" id="marketGrid"></div>
 </main>
 
+<!-- MODAL -->
+<div id="marketModal">
+  <div class="modal-backdrop"></div>
+  <div class="modal">
+    <button class="modal-close" id="modalClose">✕</button>
+    <h2 id="modalName"></h2>
+    <p id="modalAddress"></p>
+    <h3>Öffnungszeiten</h3>
+    <ul id="modalTimes"></ul>
+  </div>
+</div>
+
 <script>
   /* SUPABASE */
   const sb = supabase.createClient(
-    "https://laeolvvznxstwmydqklp.supabase.co",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhZW9sdnZ6bnhzdHdteWRxa2xwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2OTg2ODAsImV4cCI6MjA3ODI3NDY4MH0.lFXZiqmgYGa6FwvgRee6OcoY2oN9bgMeuDNIqPl_eaU"
+    "SUPABASE_URL",
+    "SUPABASE_PUBLIC_KEY"
   );
 
   const grid = document.getElementById("marketGrid");
@@ -138,74 +220,38 @@
 
   let allMarkets = [];
 
-  function getParams() {
-    return new URLSearchParams(window.location.search);
-  }
+  const days = [
+    ["montag","Montag"],
+    ["dienstag","Dienstag"],
+    ["mittwoch","Mittwoch"],
+    ["donnerstag","Donnerstag"],
+    ["freitag","Freitag"],
+    ["samstag","Samstag"],
+    ["sonntag","Sonntag"]
+  ];
 
-  function getTodayKey() {
+  function todayKey() {
     return ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"][new Date().getDay()];
   }
 
-  function isOpenToday(timeString) {
-    if (!timeString || timeString.toLowerCase().includes("geschlossen")) return false;
+  function isOpen(time) {
+    if (!time || time.toLowerCase().includes("geschlossen")) return false;
+    const [s,e] = time.split("-");
+    if (!s || !e) return false;
 
     const now = new Date();
-    const [start, end] = timeString.split("-");
-    if (!start || !end) return false;
+    const [sh,sm] = s.split(":").map(Number);
+    const [eh,em] = e.split(":").map(Number);
 
-    const [sh, sm] = start.split(":").map(Number);
-    const [eh, em] = end.split(":").map(Number);
+    const start = new Date(); start.setHours(sh,sm,0);
+    const end = new Date(); end.setHours(eh,em,0);
 
-    const s = new Date(); s.setHours(sh, sm, 0);
-    const e = new Date(); e.setHours(eh, em, 0);
-
-    return now >= s && now <= e;
-  }
-
-  function applyFilters() {
-    const q = searchInput.value.toLowerCase();
-    const region = regionSelect.value;
-
-    const filtered = allMarkets.filter(m => {
-      const textMatch =
-        `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q);
-      const regionMatch = !region || m.region === region;
-      return textMatch && regionMatch;
-    });
-
-    renderMarkets(filtered);
-  }
-
-  function updateURL() {
-    const params = getParams();
-    params.delete("region");
-
-    if (regionSelect.value) {
-      params.set("region", regionSelect.value);
-    }
-
-    history.replaceState({}, "", "?" + params.toString());
-  }
-
-  async function loadMarkets() {
-    const params = getParams();
-    const region = params.get("region");
-
-    if (region) regionSelect.value = region;
-
-    const { data, error } = await sb.from("märkte").select("*");
-    if (error) {
-      grid.innerHTML = "<p>Fehler beim Laden der Märkte.</p>";
-      return;
-    }
-
-    allMarkets = data;
-    applyFilters();
+    return now >= start && now <= end;
   }
 
   function renderMarkets(markets) {
     grid.innerHTML = "";
-    const today = getTodayKey();
+    const today = todayKey();
 
     markets.forEach(m => {
       let statusText = "Geschlossen";
@@ -214,13 +260,15 @@
       if (m.status === "planned") {
         statusText = "Geplant";
         statusClass = "planned";
-      } else if (isOpenToday(m[today])) {
+      } else if (isOpen(m[today])) {
         statusText = "Jetzt geöffnet";
         statusClass = "open";
       }
 
       const div = document.createElement("div");
       div.className = "market";
+      div.onclick = () => openModal(m);
+
       div.innerHTML = `
         <h3>${m.name}</h3>
         <div class="address">
@@ -235,17 +283,56 @@
     });
   }
 
-  /* EVENTS */
-  searchInput.addEventListener("input", applyFilters);
-  regionSelect.addEventListener("change", () => {
-    updateURL();
-    applyFilters();
-  });
+  function applyFilters() {
+    const q = searchInput.value.toLowerCase();
+    const region = regionSelect.value;
 
-  searchForm.addEventListener("submit", e => {
-    e.preventDefault();   // 🔥 Enter funktioniert jetzt
-    applyFilters();
-  });
+    const filtered = allMarkets.filter(m =>
+      `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q) &&
+      (!region || m.region === region)
+    );
+
+    renderMarkets(filtered);
+  }
+
+  function openModal(m) {
+    document.getElementById("modalName").textContent = m.name;
+    document.getElementById("modalAddress").innerHTML =
+      `${m.adresse} ${m.hausnummer}<br>${m.stadt}`;
+
+    const ul = document.getElementById("modalTimes");
+    ul.innerHTML = "";
+
+    days.forEach(([key,label]) => {
+      const li = document.createElement("li");
+      li.textContent = `${label}: ${m[key] || "—"}`;
+      ul.appendChild(li);
+    });
+
+    document.getElementById("marketModal").style.display = "block";
+  }
+
+  function closeModal() {
+    document.getElementById("marketModal").style.display = "none";
+  }
+
+  document.getElementById("modalClose").onclick = closeModal;
+  document.querySelector(".modal-backdrop").onclick = closeModal;
+
+  searchInput.addEventListener("input", applyFilters);
+  regionSelect.addEventListener("change", applyFilters);
+  searchForm.addEventListener("submit", e => { e.preventDefault(); applyFilters(); });
+
+  async function loadMarkets() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("region")) regionSelect.value = params.get("region");
+
+    const { data, error } = await sb.from("märkte").select("*");
+    if (!error) {
+      allMarkets = data;
+      applyFilters();
+    }
+  }
 
   loadMarkets();
 </script>
