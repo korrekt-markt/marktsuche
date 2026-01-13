@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <title>Marktsuche – KORREKT.</title>
-  <meta name="description" content="KORREKT. Marktsuche – finde Märkte nach Region und Standort." />
+  <meta name="description" content="KORREKT. Marktsuche – finde Märkte nach Region und Öffnungsstatus.">
+  <meta name="theme-color" content="#111">
 
-  <link rel="icon" type="image/png" href="https://korrekt-markt.de/favicon.png" />
-  <meta name="theme-color" content="#111" />
-
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet" />
+  <link rel="icon" href="https://korrekt-markt.de/favicon.png">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
     body {
@@ -31,44 +31,49 @@
     .logo img { height: 40px; }
 
     main {
-      padding: 3rem;
       max-width: 1200px;
       margin: auto;
+      padding: 3rem;
     }
 
     h1 {
-      color: #ff0a7a;
       margin-top: 0;
+      color: #ff0a7a;
     }
 
-    /* FILTER */
-    .filter {
-      display: flex;
-      gap: 1rem;
-      flex-wrap: wrap;
+    /* SUCHLEISTE */
+    .searchbar {
       margin: 2rem 0;
     }
 
-    select, input {
+    .searchbar input {
+      width: 100%;
+      max-width: 480px;
+      padding: 0.8rem 1.2rem;
+      border-radius: 30px;
+      border: none;
       background: #222;
       color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 0.7rem 1rem;
       font-size: 1rem;
     }
 
-    /* MARKT LISTE */
+    /* GRID */
     .market-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 1.5rem;
+    }
+
+    @media (max-width: 800px) {
+      .market-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .market {
       background: #2a2a2a;
-      border-radius: 14px;
-      padding: 1.6rem;
+      border-radius: 16px;
+      padding: 1.8rem;
     }
 
     .market h3 {
@@ -76,18 +81,19 @@
       color: #00a7a0;
     }
 
-    .market .region {
-      font-size: 0.9rem;
-      color: #aaa;
-    }
-
     .status {
       margin-top: 0.8rem;
-      font-weight: 600;
+      font-weight: 700;
     }
 
     .open { color: #00ff99; }
+    .closed { color: #ff4d4d; }
     .planned { color: #ffaa00; }
+
+    .address {
+      color: #ddd;
+      margin-top: 0.3rem;
+    }
   </style>
 </head>
 
@@ -103,86 +109,117 @@
 
 <main>
   <h1>Marktsuche</h1>
-  <p>Finde KORREKT.-Märkte nach Region.</p>
+  <p>Finde KORREKT.-Märkte nach Region und Öffnungsstatus.</p>
 
-  <div class="filter">
-    <select id="regionFilter">
-      <option value="">Alle Regionen</option>
-      <option value="dessau-anhalt">Dessau-Anhalt</option>
-      <option value="sachsen-anhalt">Sachsen-Anhalt</option>
-    </select>
+  <div class="searchbar">
+    <input
+      type="text"
+      id="searchInput"
+      placeholder="Markt, Stadt oder Adresse suchen …"
+    >
   </div>
 
   <div class="market-grid" id="marketGrid"></div>
 </main>
 
 <script>
-  const markets = [
-    {
-      name: "KORREKT. Dessau-Roßlau",
-      region: "dessau-anhalt",
-      type: "Vollsortimenter",
-      status: "open"
-    },
-    {
-      name: "KORREKT. Dessau (weiterer Standort)",
-      region: "dessau-anhalt",
-      type: "urban",
-      status: "planned"
-    }
-  ];
+  /* 🔧 SUPABASE */
+  const supabase = supabase.createClient(
+    "https://DEIN-PROJEKT.supabase.co",
+    "PUBLIC_ANON_KEY"
+  );
 
   const grid = document.getElementById("marketGrid");
-  const regionSelect = document.getElementById("regionFilter");
+  const searchInput = document.getElementById("searchInput");
+  let allMarkets = [];
 
   function getRegionFromURL() {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("region");
+    return new URLSearchParams(window.location.search).get("region");
   }
 
-  function renderMarkets(region = "") {
-    grid.innerHTML = "";
-
-    markets
-      .filter(m => !region || m.region === region)
-      .forEach(market => {
-        const div = document.createElement("div");
-        div.className = "market";
-        div.innerHTML = `
-          <h3>${market.name}</h3>
-          <div class="region">${market.region.replace("-", " ")}</div>
-          <div>${market.type}</div>
-          <div class="status ${market.status}">
-            Status: ${market.status === "open" ? "in Betrieb" : "in Planung"}
-          </div>
-        `;
-        grid.appendChild(div);
-      });
+  function getTodayKey() {
+    const days = ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"];
+    return days[new Date().getDay()];
   }
 
-  function updateURL(region) {
-    const url = new URL(window.location);
-    if (region) {
-      url.searchParams.set("region", region);
-    } else {
-      url.searchParams.delete("region");
+  function isOpenToday(timeString) {
+    if (!timeString || timeString.toLowerCase().includes("geschlossen")) {
+      return false;
     }
-    window.history.replaceState({}, "", url);
+
+    const now = new Date();
+    const [start, end] = timeString.split("-");
+    if (!start || !end) return false;
+
+    const [sh, sm] = start.split(":").map(Number);
+    const [eh, em] = end.split(":").map(Number);
+
+    const startTime = new Date();
+    startTime.setHours(sh, sm, 0);
+
+    const endTime = new Date();
+    endTime.setHours(eh, em, 0);
+
+    return now >= startTime && now <= endTime;
   }
 
-  // INIT
-  const regionFromURL = getRegionFromURL();
-  if (regionFromURL) {
-    regionSelect.value = regionFromURL;
+  async function loadMarkets() {
+    const region = getRegionFromURL();
+
+    let query = supabase.from("märkte").select("*");
+    if (region) query = query.eq("region", region);
+
+    const { data, error } = await query;
+    if (error) {
+      grid.innerHTML = "<p>Fehler beim Laden der Märkte.</p>";
+      return;
+    }
+
+    allMarkets = data;
+    renderMarkets(data);
   }
 
-  renderMarkets(regionFromURL);
+  function renderMarkets(markets) {
+    grid.innerHTML = "";
+    const todayKey = getTodayKey();
 
-  regionSelect.addEventListener("change", e => {
-    const region = e.target.value;
-    updateURL(region);
-    renderMarkets(region);
+    markets.forEach(m => {
+      let statusText = "Geschlossen";
+      let statusClass = "closed";
+
+      if (m.status === "planned") {
+        statusText = "Geplant";
+        statusClass = "planned";
+      } else if (isOpenToday(m[todayKey])) {
+        statusText = "Jetzt geöffnet";
+        statusClass = "open";
+      }
+
+      const div = document.createElement("div");
+      div.className = "market";
+      div.innerHTML = `
+        <h3>${m.name}</h3>
+        <div class="address">
+          ${m.adresse} ${m.hausnummer}<br>
+          ${m.stadt}
+        </div>
+        <div class="status ${statusClass}">
+          ${statusText}
+        </div>
+      `;
+      grid.appendChild(div);
+    });
+  }
+
+  searchInput.addEventListener("input", e => {
+    const q = e.target.value.toLowerCase();
+    const filtered = allMarkets.filter(m =>
+      `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q)
+    );
+    renderMarkets(filtered);
   });
+
+  loadMarkets();
 </script>
 
 </body>
