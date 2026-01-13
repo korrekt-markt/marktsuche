@@ -234,6 +234,38 @@
     return ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"][new Date().getDay()];
   }
 
+  function dayAbbr(key) {
+  return {
+    montag: "Mo",
+    dienstag: "Di",
+    mittwoch: "Mi",
+    donnerstag: "Do",
+    freitag: "Fr",
+    samstag: "Sa",
+    sonntag: "So"
+  }[key];
+}
+
+function getNextOpening(market) {
+  const order = ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"];
+  const todayIndex = new Date().getDay();
+
+  for (let i = 0; i < 7; i++) {
+    const idx = (todayIndex + i) % 7;
+    const key = order[idx];
+    const time = market[key];
+
+    if (time && !time.toLowerCase().includes("geschlossen")) {
+      const start = time.split("-")[0]?.trim();
+      if (start) {
+        return `Öffnet ${dayAbbr(key)}, ${start}`;
+      }
+    }
+  }
+  return "Geschlossen";
+}
+
+
   function isOpen(time) {
     if (!time || time.toLowerCase().includes("geschlossen")) return false;
     const [s,e] = time.split("-");
@@ -255,15 +287,18 @@
 
     markets.forEach(m => {
       let statusText = "Geschlossen";
-      let statusClass = "closed";
+let statusClass = "closed";
 
-      if (m.status === "planned") {
-        statusText = "Geplant";
-        statusClass = "planned";
-      } else if (isOpen(m[today])) {
-        statusText = "Jetzt geöffnet";
-        statusClass = "open";
-      }
+if (m.status === "planned") {
+  statusText = "Geplant";
+  statusClass = "planned";
+} else if (isOpen(m[today])) {
+  statusText = "Jetzt geöffnet";
+  statusClass = "open";
+} else {
+  statusText = `Geschlossen · ${getNextOpening(m)}`;
+}
+
 
       const div = document.createElement("div");
       div.className = "market";
@@ -338,7 +373,18 @@ const filtered = allMarkets.filter(m => {
   document.querySelector(".modal-backdrop").onclick = closeModal;
 
   searchInput.addEventListener("input", applyFilters);
-  regionSelect.addEventListener("change", applyFilters);
+regionSelect.addEventListener("change", () => {
+  const params = new URLSearchParams(window.location.search);
+
+  if (regionSelect.value) {
+    params.set("region", regionSelect.value);
+  } else {
+    params.delete("region");
+  }
+
+  history.replaceState({}, "", `${location.pathname}?${params}`);
+  applyFilters();
+});
   searchForm.addEventListener("submit", e => { e.preventDefault(); applyFilters(); });
 
   async function loadMarkets() {
