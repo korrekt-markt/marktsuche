@@ -248,22 +248,41 @@
 
 function getNextOpening(market) {
   const order = ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"];
-  const todayIndex = new Date().getDay();
+  const now = new Date();
+  const todayIndex = now.getDay();
 
   for (let i = 0; i < 7; i++) {
     const idx = (todayIndex + i) % 7;
     const key = order[idx];
     const time = market[key];
 
-    if (time && !time.toLowerCase().includes("geschlossen")) {
-      const start = time.split("-")[0]?.trim();
-      if (start) {
-        return `Öffnet ${dayAbbr(key)}, ${start}`;
-      }
+    if (!time || time.toLowerCase().includes("geschlossen")) continue;
+
+    const [start, end] = time.split("-").map(t => t.trim());
+    if (!start || !end) continue;
+
+    const [sh, sm] = start.split(":").map(Number);
+    const [eh, em] = end.split(":").map(Number);
+
+    const openTime = new Date();
+    openTime.setDate(now.getDate() + i);
+    openTime.setHours(sh, sm, 0, 0);
+
+    const closeTime = new Date();
+    closeTime.setDate(now.getDate() + i);
+    closeTime.setHours(eh, em, 0, 0);
+
+    // 👉 Heute nur zählen, wenn Öffnung noch kommt
+    if (i === 0 && now >= closeTime) {
+      continue;
     }
+
+    return `Öffnet ${dayAbbr(key)}, ${start}`;
   }
+
   return "Geschlossen";
 }
+
 
 
   function isOpen(time) {
