@@ -283,14 +283,32 @@
     });
   }
 
+  function normalizeRegion(value) {
+  return (value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace("ü", "ue")
+    .replace("ö", "oe")
+    .replace("ä", "ae");
+}
+
+
   function applyFilters() {
     const q = searchInput.value.toLowerCase();
-    const region = regionSelect.value;
+const region = normalizeRegion(regionSelect.value);
 
-    const filtered = allMarkets.filter(m =>
-      `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q) &&
-      (!region || m.region === region)
-    );
+const filtered = allMarkets.filter(m => {
+  const textMatch =
+    `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q);
+
+  const marketRegion = normalizeRegion(m.region);
+
+  const regionMatch = !region || marketRegion === region;
+
+  return textMatch && regionMatch;
+});
+
 
     renderMarkets(filtered);
   }
