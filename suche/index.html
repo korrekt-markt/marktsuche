@@ -246,6 +246,22 @@
   }[key];
 }
 
+  function parseTime(str) {
+  if (!str) return null;
+
+  // entfernt "Uhr", Leerzeichen & Sondertrennzeichen
+  const clean = str
+    .toLowerCase()
+    .replace("uhr", "")
+    .replace(/\s+/g, "")
+    .replace("–", "-");
+
+  const [h, m] = clean.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return null;
+
+  return { h, m };
+}
+
 function getNextOpening(market) {
   const order = ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"];
   const now = new Date();
@@ -258,26 +274,25 @@ function getNextOpening(market) {
 
     if (!time || time.toLowerCase().includes("geschlossen")) continue;
 
-    const [start, end] = time.split("-").map(t => t.trim());
+    const [startStr, endStr] = time.split("-").map(t => t.trim());
+    if (!startStr || !endStr) continue;
+
+    const start = parseTime(startStr);
+    const end = parseTime(endStr);
     if (!start || !end) continue;
 
-    const [sh, sm] = start.split(":").map(Number);
-    const [eh, em] = end.split(":").map(Number);
-
-    const openTime = new Date();
+    const openTime = new Date(now);
     openTime.setDate(now.getDate() + i);
-    openTime.setHours(sh, sm, 0, 0);
+    openTime.setHours(start.h, start.m, 0, 0);
 
-    const closeTime = new Date();
+    const closeTime = new Date(now);
     closeTime.setDate(now.getDate() + i);
-    closeTime.setHours(eh, em, 0, 0);
+    closeTime.setHours(end.h, end.m, 0, 0);
 
-    // 👉 Heute nur zählen, wenn Öffnung noch kommt
-    if (i === 0 && now >= closeTime) {
-      continue;
-    }
+    // ❗ Heute nur, wenn Öffnung noch kommt
+    if (i === 0 && now >= closeTime) continue;
 
-    return `Öffnet ${dayAbbr(key)}, ${start}`;
+    return `Öffnet ${dayAbbr(key)}, ${startStr.replace(/uhr/i, "").trim()}`;
   }
 
   return "Geschlossen";
@@ -285,20 +300,27 @@ function getNextOpening(market) {
 
 
 
-  function isOpen(time) {
-    if (!time || time.toLowerCase().includes("geschlossen")) return false;
-    const [s,e] = time.split("-");
-    if (!s || !e) return false;
+function isOpen(time) {
+  if (!time || time.toLowerCase().includes("geschlossen")) return false;
 
-    const now = new Date();
-    const [sh,sm] = s.split(":").map(Number);
-    const [eh,em] = e.split(":").map(Number);
+  const [startStr, endStr] = time.split("-");
+  if (!startStr || !endStr) return false;
 
-    const start = new Date(); start.setHours(sh,sm,0);
-    const end = new Date(); end.setHours(eh,em,0);
+  const start = parseTime(startStr);
+  const end = parseTime(endStr);
+  if (!start || !end) return false;
 
-    return now >= start && now <= end;
-  }
+  const now = new Date();
+
+  const startDate = new Date();
+  startDate.setHours(start.h, start.m, 0, 0);
+
+  const endDate = new Date();
+  endDate.setHours(end.h, end.m, 0, 0);
+
+  return now >= startDate && now <= endDate;
+}
+
 
   function renderMarkets(markets) {
     grid.innerHTML = "";
