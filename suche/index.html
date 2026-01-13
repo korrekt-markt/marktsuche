@@ -24,7 +24,6 @@
       padding: 1rem 2.6rem;
       background: linear-gradient(90deg, #333, #444);
       display: flex;
-      justify-content: space-between;
       align-items: center;
     }
 
@@ -36,25 +35,29 @@
       padding: 3rem;
     }
 
-    h1 {
-      margin-top: 0;
-      color: #ff0a7a;
-    }
+    h1 { color: #ff0a7a; margin-top: 0; }
 
-    /* SUCHLEISTE */
-    .searchbar {
+    /* FILTER */
+    .filters {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
       margin: 2rem 0;
     }
 
-    .searchbar input {
-      width: 100%;
-      max-width: 480px;
-      padding: 0.8rem 1.2rem;
-      border-radius: 30px;
-      border: none;
+    .filters input,
+    .filters select {
       background: #222;
       color: #fff;
+      border: none;
+      border-radius: 30px;
+      padding: 0.8rem 1.2rem;
       font-size: 1rem;
+    }
+
+    .filters input {
+      flex: 1;
+      min-width: 260px;
     }
 
     /* GRID */
@@ -65,9 +68,7 @@
     }
 
     @media (max-width: 800px) {
-      .market-grid {
-        grid-template-columns: 1fr;
-      }
+      .market-grid { grid-template-columns: 1fr; }
     }
 
     .market {
@@ -76,10 +77,9 @@
       padding: 1.8rem;
     }
 
-    .market h3 {
-      margin-top: 0;
-      color: #00a7a0;
-    }
+    .market h3 { margin-top: 0; color: #00a7a0; }
+
+    .address { color: #ddd; margin-top: 0.4rem; }
 
     .status {
       margin-top: 0.8rem;
@@ -89,11 +89,6 @@
     .open { color: #00ff99; }
     .closed { color: #ff4d4d; }
     .planned { color: #ffaa00; }
-
-    .address {
-      color: #ddd;
-      margin-top: 0.3rem;
-    }
   </style>
 </head>
 
@@ -109,43 +104,50 @@
 
 <main>
   <h1>Marktsuche</h1>
-  <p>Finde KORREKT.-Märkte nach Region und Öffnungsstatus.</p>
+  <p>Finde KORREKT.-Märkte nach Region.</p>
 
-  <div class="searchbar">
+  <!-- FILTER -->
+  <form class="filters" id="searchForm">
     <input
       type="text"
       id="searchInput"
       placeholder="Markt, Stadt oder Adresse suchen …"
     >
-  </div>
+
+    <select id="regionFilter">
+      <option value="">Alle Regionen</option>
+      <option value="dessau-anhalt">Dessau-Anhalt</option>
+      <option value="sachsen-anhalt">Sachsen-Anhalt</option>
+    </select>
+  </form>
 
   <div class="market-grid" id="marketGrid"></div>
 </main>
 
 <script>
-  /* 🔧 SUPABASE */
+  /* SUPABASE */
   const supabase = supabase.createClient(
-    "https://DEIN-PROJEKT.supabase.co",
-    "PUBLIC_ANON_KEY"
+    "https://laeolvvznxstwmydqklp.supabase.co",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhZW9sdnZ6bnhzdHdteWRxa2xwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI2OTg2ODAsImV4cCI6MjA3ODI3NDY4MH0.lFXZiqmgYGa6FwvgRee6OcoY2oN9bgMeuDNIqPl_eaU"
   );
 
   const grid = document.getElementById("marketGrid");
   const searchInput = document.getElementById("searchInput");
+  const regionSelect = document.getElementById("regionFilter");
+  const searchForm = document.getElementById("searchForm");
+
   let allMarkets = [];
 
-  function getRegionFromURL() {
-    return new URLSearchParams(window.location.search).get("region");
+  function getParams() {
+    return new URLSearchParams(window.location.search);
   }
 
   function getTodayKey() {
-    const days = ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"];
-    return days[new Date().getDay()];
+    return ["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"][new Date().getDay()];
   }
 
   function isOpenToday(timeString) {
-    if (!timeString || timeString.toLowerCase().includes("geschlossen")) {
-      return false;
-    }
+    if (!timeString || timeString.toLowerCase().includes("geschlossen")) return false;
 
     const now = new Date();
     const [start, end] = timeString.split("-");
@@ -154,34 +156,56 @@
     const [sh, sm] = start.split(":").map(Number);
     const [eh, em] = end.split(":").map(Number);
 
-    const startTime = new Date();
-    startTime.setHours(sh, sm, 0);
+    const s = new Date(); s.setHours(sh, sm, 0);
+    const e = new Date(); e.setHours(eh, em, 0);
 
-    const endTime = new Date();
-    endTime.setHours(eh, em, 0);
+    return now >= s && now <= e;
+  }
 
-    return now >= startTime && now <= endTime;
+  function applyFilters() {
+    const q = searchInput.value.toLowerCase();
+    const region = regionSelect.value;
+
+    const filtered = allMarkets.filter(m => {
+      const textMatch =
+        `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q);
+      const regionMatch = !region || m.region === region;
+      return textMatch && regionMatch;
+    });
+
+    renderMarkets(filtered);
+  }
+
+  function updateURL() {
+    const params = getParams();
+    params.delete("region");
+
+    if (regionSelect.value) {
+      params.set("region", regionSelect.value);
+    }
+
+    history.replaceState({}, "", "?" + params.toString());
   }
 
   async function loadMarkets() {
-    const region = getRegionFromURL();
+    const params = getParams();
+    const region = params.get("region");
 
-    let query = supabase.from("märkte").select("*");
-    if (region) query = query.eq("region", region);
+    if (region) regionSelect.value = region;
 
-    const { data, error } = await query;
+    const { data, error } = await supabase.from("märkte").select("*");
     if (error) {
       grid.innerHTML = "<p>Fehler beim Laden der Märkte.</p>";
       return;
     }
 
     allMarkets = data;
-    renderMarkets(data);
+    applyFilters();
   }
 
   function renderMarkets(markets) {
     grid.innerHTML = "";
-    const todayKey = getTodayKey();
+    const today = getTodayKey();
 
     markets.forEach(m => {
       let statusText = "Geschlossen";
@@ -190,7 +214,7 @@
       if (m.status === "planned") {
         statusText = "Geplant";
         statusClass = "planned";
-      } else if (isOpenToday(m[todayKey])) {
+      } else if (isOpenToday(m[today])) {
         statusText = "Jetzt geöffnet";
         statusClass = "open";
       }
@@ -211,12 +235,16 @@
     });
   }
 
-  searchInput.addEventListener("input", e => {
-    const q = e.target.value.toLowerCase();
-    const filtered = allMarkets.filter(m =>
-      `${m.name} ${m.adresse} ${m.stadt}`.toLowerCase().includes(q)
-    );
-    renderMarkets(filtered);
+  /* EVENTS */
+  searchInput.addEventListener("input", applyFilters);
+  regionSelect.addEventListener("change", () => {
+    updateURL();
+    applyFilters();
+  });
+
+  searchForm.addEventListener("submit", e => {
+    e.preventDefault();   // 🔥 Enter funktioniert jetzt
+    applyFilters();
   });
 
   loadMarkets();
